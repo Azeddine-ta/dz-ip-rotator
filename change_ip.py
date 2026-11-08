@@ -1436,10 +1436,19 @@ def run_setup_wizard() -> dict:
     elif preset == "4": username = input("Enter custom username: ").strip()
     else: username = default_user
 
-    password = getpass.getpass(f"Enter router password for '{username}': ")
+    default_pass = current_cfg.get("password", "")
+    pass_prompt = f"Enter router password for '{username}'"
+    if default_pass:
+        pass_prompt += f" [press Enter to keep saved]: "
+    else:
+        pass_prompt += ": "
+
+    password = input(pass_prompt).strip()
+    if not password and default_pass:
+        password = default_pass
     while not password:
         print("Password cannot be empty.")
-        password = getpass.getpass(f"Enter router password for '{username}': ")
+        password = input(f"Enter router password for '{username}': ").strip()
 
     print("\nTesting connection...")
     driver = create_driver(vendor, host, port, username, password)
