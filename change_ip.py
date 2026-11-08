@@ -483,22 +483,35 @@ class HuaweiDriver(BaseRouterDriver):
             self.base_url = f"{self.protocol}://{self.host}:{self.port}"
             return
 
-        proto_candidates = ["http", "https"] if self.port == 80 else ["https", "http"]
-        for proto in proto_candidates:
-            test_url = f"{proto}://{self.host}:{self.port}/"
-            try:
-                req = urllib.request.Request(test_url, headers={"User-Agent": "Mozilla/5.0"})
-                with self.opener.open(req, timeout=2.0) as resp:
-                    if resp.status in (200, 302, 401, 403, 404):
-                        self.protocol = proto
-                        self.base_url = f"{proto}://{self.host}:{self.port}"
-                        return
-            except Exception:
-                continue
+        # 1. Probe HTTPS first (Huawei ONTs in Algeria serve HTTPS on port 80)
+        try:
+            test_url = f"https://{self.host}:{self.port}/asp/GetRandCount.asp"
+            req = urllib.request.Request(test_url, data=b"", headers={"User-Agent": "Mozilla/5.0"})
+            with self.opener.open(req, timeout=2.0) as resp:
+                data = resp.read().decode("utf-8", errors="ignore").strip().lstrip("\ufeff").strip("'\" \r\n")
+                if re.match(r"^[0-9a-fA-F]{16,}$", data):
+                    self.protocol = "https"
+                    self.base_url = f"https://{self.host}:{self.port}"
+                    return
+        except Exception:
+            pass
 
-        default_proto = "http" if self.port == 80 else "https"
-        self.protocol = default_proto
-        self.base_url = f"{default_proto}://{self.host}:{self.port}"
+        # 2. Probe HTTP
+        try:
+            test_url = f"http://{self.host}:{self.port}/asp/GetRandCount.asp"
+            req = urllib.request.Request(test_url, data=b"", headers={"User-Agent": "Mozilla/5.0"})
+            with self.opener.open(req, timeout=2.0) as resp:
+                data = resp.read().decode("utf-8", errors="ignore").strip().lstrip("\ufeff").strip("'\" \r\n")
+                if re.match(r"^[0-9a-fA-F]{16,}$", data):
+                    self.protocol = "http"
+                    self.base_url = f"http://{self.host}:{self.port}"
+                    return
+        except Exception:
+            pass
+
+        # 3. Default fallback
+        self.protocol = "https"
+        self.base_url = f"https://{self.host}:{self.port}"
 
     def _request(self, path: str, data: dict = None, extra_headers: dict = None) -> str:
         if not self.base_url:
@@ -539,9 +552,25 @@ class HuaweiDriver(BaseRouterDriver):
 
     def login(self) -> bool:
         self.determine_protocol()
+
+        # Check for temporary lockout cooldown
+        try:
+            check_req = urllib.request.Request(f"{self.base_url}/", headers={"User-Agent": "Mozilla/5.0"})
+            with self.opener.open(check_req, timeout=2.5) as r:
+                page_text = r.read().decode("utf-8", errors="ignore")
+                m_lock = re.search(r'var\s+LockLeftTime\s*=\s*[\'"](\d+)[\'"]', page_text)
+                if m_lock and int(m_lock.group(1)) > 0:
+                    raise RuntimeError(f"Huawei router is temporarily locked ({m_lock.group(1)}s cooldown remaining due to 3 failed attempts). Please wait for the cooldown to finish.")
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+
         try:
             token_resp = self._request("/asp/GetRandCount.asp", data={})
             token = token_resp.strip().lstrip("\ufeff").strip("'\" \r\n")
+            if not re.match(r"^[0-9a-fA-F]{16,}$", token):
+                raise RuntimeError("Invalid token format received from Huawei router.")
         except Exception as e:
             raise RuntimeError(f"Could not reach Huawei router at {self.base_url} ({e})")
 
@@ -556,7 +585,7 @@ class HuaweiDriver(BaseRouterDriver):
         self._request("/login.cgi", data=login_data, extra_headers=headers)
         
         if not self.sid_cookie or "sid=" not in self.sid_cookie:
-            raise RuntimeError("Huawei Authentication failed: invalid credentials or session busy.")
+            raise RuntimeError("Huawei Authentication failed: Incorrect password or session busy. (On HG8145X6/OptiXstar, verify password on the router sticker or try 'admin').")
         return True
 
     def logout(self):
