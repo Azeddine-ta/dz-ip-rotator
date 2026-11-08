@@ -80,21 +80,6 @@ curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/chang
 
 ---
 
-## 🔑 Algérie Télécom Default Router Credentials
-
-Not sure what your router password is? Here are the official defaults:
-
-| Router Brand / Model | Username | Password |
-| :--- | :--- | :--- |
-| **Huawei** (Superadmin) | `telecomadmin` | `admintelecom` |
-| **Huawei** (Admin) | `admin` | `admin` |
-| **FiberHome** (Admin) | `admin` | `admin` *(or printed on modem sticker)* |
-| **FiberHome** (User) | `user` | `user` |
-
----
-
----
-
 ## 🎮 Interactive Menu (TUI)
 
 ```text
