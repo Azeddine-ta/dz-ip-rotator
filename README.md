@@ -41,7 +41,6 @@ This utility was developed and **rigorously tested in real-world conditions on A
 | :--- | :--- | :---: |
 | **Huawei EchoLife / OptiXstar** (HG8145V5, HG8245H, HG8145X6) | Tested with `telecomadmin` & `admin`. Instant WAN bounce. | ✅ **Verified & Working** |
 | **FiberHome** (HG6145D2, HG6145F1) | Tested on HG6145D2 with custom AES-128 login encryption. | ✅ **Verified & Working** |
-| **Universal UPnP IGD** (OpenWrt, ASUS, TP-Link) | Standard UPnP `ForceTermination` action. | 🟢 Supported |
 
 ---
 
@@ -51,7 +50,6 @@ This utility was developed and **rigorously tested in real-world conditions on A
 * **Multi-Vendor Router Support:**
   * **Huawei EchoLife / OptiXstar** (HG8145X6, HG8145V5, HG8245H, HG8245W5)
   * **FiberHome** (HG6145D2, HG6145F1, AN5506) — with built-in pure-Python AES-128-CBC auth cipher
-  * **Universal UPnP IGD** (TP-Link, ASUS, Keenetic, OpenWrt, FritzBox)
 * **Auto-Discovery:** Automatically detects gateway IP (`192.168.1.1`) and fingerprints router brand on first run.
 * **Anti-CGNAT Filter:** Rejects `100.64.x` / `10.x` addresses until a real public 1:1 IP is leased.
 * **IP Pool Hunter:** Force rotation until you land on your preferred pool (`105`, `154`, `41`, `197`).

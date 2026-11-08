@@ -6,7 +6,6 @@ Universal, Zero-Dependency WAN IP Rotator, CGNAT Hunter, and Latency Optimizer.
 Supported Hardware & Protocols:
   - Huawei EchoLife / OptiXstar (HG8145X6, HG8145V5, HG8245H, HG8245W5)
   - FiberHome (HG6145F1, HG6145D2, HG6143D, AN5506)
-  - Universal UPnP IGD (OpenWrt, ASUS, TP-Link, Keenetic, FritzBox)
 
 Developer : Azeddine
 Telegram  : https://t.me/x4D7217A7A6F
@@ -923,62 +922,6 @@ class FiberHomeDriver(BaseRouterDriver):
         return True
 
 
-class UPnPDriver(BaseRouterDriver):
-    def __init__(self, host, port=5555, username="", password="", protocol=None):
-        super().__init__(host, port, username, password, protocol)
-        self.vendor_name = "Universal UPnP IGD"
-        self.control_url = None
-        self.service_type = "urn:schemas-upnp-org:service:WANPPPConnection:1"
-
-    def login(self) -> bool:
-        for probe_path in ["/ctl/PPPConn", "/ipc", "/upnp/control/WANPPPConnection"]:
-            try:
-                url = f"http://{self.host}:{self.port}{probe_path}"
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with self.opener.open(req, timeout=2) as resp:
-                    if resp.status in (200, 400, 405, 500):
-                        return True
-            except Exception:
-                continue
-        raise RuntimeError(f"Could not reach UPnP IGD service at http://{self.host}:{self.port} (Make sure UPnP is enabled on your router).")
-
-    def get_full_wan_status(self) -> dict:
-        _, _, ext_ip = check_cgnat("1.1.1.1")
-        return {
-            "driver": "UPnP",
-            "domain": "UPnP-WAN",
-            "status": "Connected",
-            "name": "Universal UPnP Gateway",
-            "ip": ext_ip or "0.0.0.0",
-            "gateway": self.host,
-            "dns": "1.1.1.1",
-            "bras": "UPnP",
-            "uptime_seconds": "0"
-        }
-
-    def reconnect_pppoe(self, delay: float = 1.0) -> bool:
-        soap_body = f"""<?xml version="1.0"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-<s:Body>
-<u:ForceTermination xmlns:u="{self.service_type}"></u:ForceTermination>
-</s:Body>
-</s:Envelope>"""
-        headers = {
-            "SOAPAction": f'"{self.service_type}#ForceTermination"',
-            "Content-Type": 'text/xml; charset="utf-8"'
-        }
-        for probe_path in ["/ctl/PPPConn", "/ipc", "/upnp/control/WANPPPConnection"]:
-            try:
-                url = f"http://{self.host}:{self.port}{probe_path}"
-                req = urllib.request.Request(url, data=soap_body.encode(), headers=headers)
-                with self.opener.open(req, timeout=3) as resp:
-                    if resp.status == 200:
-                        return True
-            except Exception:
-                continue
-        return False
-
-
 def detect_router_vendor(host: str, port: int) -> str:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -1023,8 +966,6 @@ def create_driver(vendor: str, host: str, port: int, user: str, password: str) -
     v = (vendor or "").lower().strip()
     if v == "fiberhome":
         return FiberHomeDriver(host=host, port=port, username=user, password=password)
-    elif v == "upnp":
-        return UPnPDriver(host=host, port=port, username=user, password=password)
     else:
         return HuaweiDriver(host=host, port=port, username=user, password=password)
 
@@ -1432,12 +1373,10 @@ def run_setup_wizard() -> dict:
     print(f"[?] Auto-detected router brand: \033[1;32m{detected_vendor.upper()}\033[0m")
     print("  [1] Huawei EchoLife / OptiXstar (HG8145X6, HG8145V5, HG8245)")
     print("  [2] FiberHome (HG6145, HG6143, AN5506)")
-    print("  [3] Universal UPnP (OpenWrt, ASUS, TP-Link)")
-    vendor_ch = input("Select brand [1-3, default: auto-detected]: ").strip()
+    vendor_ch = input("Select brand [1-2, default: auto-detected]: ").strip()
 
     if vendor_ch == "1": vendor = "huawei"
     elif vendor_ch == "2": vendor = "fiberhome"
-    elif vendor_ch == "3": vendor = "upnp"
     else: vendor = detected_vendor
 
     print("\nCommon Username Presets:")
@@ -1768,7 +1707,7 @@ def main():
     parser.add_argument("--lang", choices=["en", "fr"], default=None, help="Set language: 'en' for English, 'fr' for Français")
     parser.add_argument("--serve", type=int, default=0, metavar="PORT", help="Run as lightweight REST API daemon on port (e.g. 8080)")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON (ideal for scripts & bots)")
-    parser.add_argument("--vendor", choices=["huawei", "fiberhome", "upnp"], default=None, help="Force router driver vendor")
+    parser.add_argument("--vendor", choices=["huawei", "fiberhome"], default=None, help="Force router driver vendor")
     parser.add_argument("--host", default=None, help="Router IP / Gateway (default: auto-detected)")
     parser.add_argument("--port", type=int, default=None, help="Router Port (default: 80)")
     parser.add_argument("--user", default=None, help="Router username")
