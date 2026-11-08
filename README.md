@@ -1,5 +1,5 @@
 # ⚡ DZ IP Rotator & Route Optimizer
-### Algérie Télécom WAN Automation & Gaming Route Hunter
+### Algérie Télécom WAN Automation & Subnet Optimizer
 
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -7,7 +7,7 @@
 [![ISP](https://img.shields.io/badge/ISP-Algérie%20Télécom%20(FTTH%20%2F%20VDSL)-orange.svg)]()
 [![Telegram](https://img.shields.io/badge/Telegram-@x4D7217A7A6F-2CA5E0.svg?logo=telegram)](https://t.me/x4D7217A7A6F)
 
-A lightweight, zero-dependency Python tool to rotate WAN IP addresses, bypass CGNAT (`100.64.x`), target specific IP subnets (`105.x`, `154.x`, `41.x`, `197.x`), and optimize gaming routes on **Algérie Télécom** fibre and DSL connections.
+A lightweight, zero-dependency Python tool to rotate WAN IP addresses, bypass CGNAT (`100.64.x`), and target specific IP subnets (`105.x`, `154.x`, `41.x`, `197.x`) on **Algérie Télécom** fibre and DSL connections.
 
 > 📖 **[اضغط هنا لقراءة الدليل الكامل باللغة العربية (README_AR.md)](README_AR.md)**
 
@@ -53,7 +53,6 @@ This utility was developed and **rigorously tested in real-world conditions on A
 * **Auto-Discovery:** Automatically detects gateway IP (`192.168.1.1`) and fingerprints router brand on first run.
 * **Anti-CGNAT Filter:** Rejects `100.64.x` / `10.x` addresses until a real public 1:1 IP is leased.
 * **IP Pool Hunter:** Force rotation until you land on your preferred pool (`105`, `154`, `41`, `197`).
-* **Gaming Route Hunter:** Automatically cycles IPs until ping to DNS/gaming benchmarks drops below your target threshold (e.g. `< 20ms`).
 * **REST API Daemon:** Built-in lightweight HTTP server (`--serve 8080`) to trigger rotations from external bots or scripts.
 * **Multi-Language TUI:** Interactive console interface supporting both English and French.
 
@@ -96,12 +95,11 @@ curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/chang
   [1] ⚡ Fast IP Rotate (Instant Single Cycle)
   [2] 🎯 Target Specific IP Pool (105.x, 154.x, 41.x, 197.x)
   [3] 🛡️ Guarantee Real Public IP (Auto-reject CGNAT 100.64.x)
-  [4] 🎮 Smart Gaming Route Hunter (Target Ping < X ms)
-  [5] 💎 Rotate Until Never-Seen IP (Permanent Unique)
-  [6] ⏱️ Auto-Rotate Timer Loop
-  [7] 📊 Multi-Server Latency Benchmark
-  [8] 📜 View IP History
-  [9] 📋 Copy Current IP to Clipboard
+  [4] 💎 Rotate Until Never-Seen IP (Permanent Unique)
+  [5] ⏱️ Auto-Rotate Timer Loop
+  [6] 📊 Multi-Server Latency Benchmark
+  [7] 📜 View IP History
+  [8] 📋 Copy Current IP to Clipboard
   [0] 🔑 Reconfigure Router Credentials
   [l] 🌐 Switch Language / Changer de langue (FR/EN)
   [r] 🔄 Refresh Dashboard   [q] 🚪 Quit
@@ -125,9 +123,6 @@ python3 change_ip.py -r -p 105
 
 # Guarantee real public IP (skip CGNAT 100.64.x)
 python3 change_ip.py -r --public-only
-
-# Hunt for gaming route with ping under 20ms
-python3 change_ip.py -r --max-ping 20
 
 # Output status in JSON format (for scripts & bots)
 python3 change_ip.py -s --json
