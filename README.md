@@ -63,26 +63,39 @@ This utility was developed and **rigorously tested in real-world conditions on A
 
 ---
 
-## 📦 Quick Start
+## 📦 Quick Start (Get Started in 10 Seconds)
 
-### Linux / macOS
+### 📱 Android (Termux) — 1-Line Run:
+Open Termux and paste:
 ```bash
-git clone https://github.com/Azeddine-ta/dz-ip-rotator.git
-cd dz-ip-rotator
-python3 change_ip.py
+pkg update && pkg install -y python curl && curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/change_ip.py -o change_ip.py && python change_ip.py
 ```
 
-### Android (Termux)
+### 🐧 Linux / macOS — 1-Line Run:
 ```bash
-pkg update && pkg install -y git python
-git clone https://github.com/Azeddine-ta/dz-ip-rotator.git
-cd dz-ip-rotator
-python3 change_ip.py
+curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/change_ip.py -o change_ip.py && python3 change_ip.py
 ```
 
-### Windows
-1. Download or clone this repository.
-2. Double-click `change_ip.py` (or run in PowerShell/CMD: `python change_ip.py`).
+### 🪟 Windows — 1-Click Run:
+1. Download this repo as a ZIP (`Code` > `Download ZIP`) or `git clone`.
+2. Extract the folder and double-click **`run.bat`**!
+
+---
+
+## 🔑 Algérie Télécom Default Router Credentials
+
+Not sure what your router password is? Here are the official defaults:
+
+| Router Brand / Model | Username | Password |
+| :--- | :--- | :--- |
+| **Huawei** (Superadmin) | `telecomadmin` | `admintelecom` |
+| **Huawei** (Admin) | `admin` | `admin` |
+| **FiberHome** (Admin) | `admin` | `admin` *(or printed on modem sticker)* |
+| **FiberHome** (User) | `user` | `user` |
+| **ZTE** (Admin) | `admin` | `admin` |
+| **ZTE** (User) | `user` | `user` |
+
+---
 
 ---
 

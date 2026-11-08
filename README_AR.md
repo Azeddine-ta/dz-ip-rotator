@@ -37,22 +37,39 @@
 
 ---
 
-## ٢. متطلبات التشغيل والتثبيت
+## ٢. التشغيل السريع في ١٠ ثوانٍ (Quick Start)
 
-تتطلب الأداة وجود بيئة **Python 3.7+** فقط:
-
-### على أنظمة لينكس / أوبونتو / دبيان:
+### 📱 على هواتف أندرويد (تطبيق Termux) — بأمر واحد مباشر:
+انسخ الأمر التالي والصقه في Termux مباشرة:
 ```bash
-sudo apt update && sudo apt install -y python3
+pkg update && pkg install -y python curl && curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/change_ip.py -o change_ip.py && python change_ip.py
 ```
 
-### على بيئة Termux (أندرويد):
+### 🐧 على أنظمة لينكس / ماك (Linux / macOS) — بأمر واحد مباشر:
 ```bash
-pkg update && pkg install -y python
+curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/change_ip.py -o change_ip.py && python3 change_ip.py
 ```
 
-### على نظام ويندوز:
-* تحميل وتثبيت بايثون من الموقع الرسمي [python.org](https://www.python.org)، مع تفعيل خيار `Add Python to PATH`.
+### 🪟 على نظام ويندوز (Windows):
+1. قم بتحميل المستودع بصيغة ZIP ثم فك الضغط.
+2. اضغط مرتين على ملف **`run.bat`** وسيعمل السكربت تلقائياً!
+
+---
+
+### 🔑 كلمات المرور الافتراضية لأجهزة اتصالات الجزائر (Algérie Télécom):
+
+إذا لم تكن متأكداً من كلمة مرور المودم، فإليك البيانات الافتراضية الرسمية:
+
+| نوع المودم | اسم المستخدم | كلمة المرور الافتراضية |
+| :--- | :--- | :--- |
+| **هواوي Huawei** (حساب المشرف) | `telecomadmin` | `admintelecom` |
+| **هواوي Huawei** (حساب عادي) | `admin` | `admin` |
+| **فايبر هوم FiberHome** (مشرف) | `admin` | `admin` *(أو المطبوعة على ملصق ظهر المودم)* |
+| **فايبر هوم FiberHome** (مستخدم) | `user` | `user` |
+| **زد تي إي ZTE** (مشرف) | `admin` | `admin` |
+| **زد تي إي ZTE** (مستخدم) | `user` | `user` |
+
+---
 
 ---
 
