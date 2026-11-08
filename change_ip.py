@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 DZ IP ROTATOR & ROUTE OPTIMIZER (Algérie Télécom Ultimate Edition v5.0)
-Universal, Zero-Dependency WAN IP Rotator, CGNAT Hunter, and Latency Optimizer.
+Universal, Zero-Dependency WAN IP Rotator, Gaming Ping Hunter, and Latency Optimizer.
 
 Supported Hardware & Protocols:
   - Huawei EchoLife / OptiXstar (HG8145X6, HG8145V5, HG8245H, HG8245W5)
@@ -87,7 +87,7 @@ I18N = {
         "cgnat_badge": "CGNAT",
         "menu_rotate": "⚡ Fast IP Rotate (Instant Single Cycle)",
         "menu_pool": "🎯 Target Specific IP Pool (105.x, 154.x, 41.x, 197.x)",
-        "menu_cgnat": "🛡️ Guarantee Real Public IP (Auto-reject CGNAT 100.64.x)",
+        "menu_ping": "🎮 Smart Gaming Route Hunter (Target Ping < X ms)",
         "menu_unique": "💎 Rotate Until Never-Seen IP (Permanent Unique)",
         "menu_timer": "⏱️ Auto-Rotate Timer Loop",
         "menu_bench": "📊 Multi-Server Latency Benchmark",
@@ -112,8 +112,8 @@ I18N = {
         "handshaking": "Handshaking with router...",
         "press_enter": "Press Enter to return to dashboard...",
         "re_cycling": "Re-cycling: {reason}",
-        "anti_cgnat_active": "Anti-CGNAT Guaranteed (Rejecting 100.64.x / 10.x)",
         "target_filter": "Requiring IP starting with {pools}",
+        "latency_target": "Ping must be < {ms} ms",
         "bench_title": "Multi-Server Latency Benchmark (Gaming & CDNs)",
         "bench_probing": "Probing European transit and DNS nodes...",
         "pool_selector_title": "Algérie Télécom IP Pool Selector",
@@ -124,7 +124,6 @@ I18N = {
         "pool_dual": "Dual Fast - Either 105.x OR 154.x",
         "pool_custom": "Custom Prefix / Subnet (e.g. 105.106., 41.107.)",
         "pool_back": "Back to Main Menu",
-        "force_public_prompt": "Force Public IP only? (reject CGNAT) [Y/n]: ",
         "lang_prompt": "Select Language / Choisissez la langue:\n  [1] English (EN)\n  [2] Français (FR)\nChoice / Choix [1-2, default: 1]: ",
         "copied_success": "✓ Copied {ip} to clipboard!",
         "clipboard_not_found": "Clipboard tool not found. IP is {ip}",
@@ -144,7 +143,7 @@ I18N = {
         "cgnat_badge": "CGNAT",
         "menu_rotate": "⚡ Changer l'IP Immédiatement (Cycle Rapide)",
         "menu_pool": "🎯 Cibler un Pool d'IP (105.x, 154.x, 41.x, 197.x)",
-        "menu_cgnat": "🛡️ Forcer une IP Publique Réelle (Refuser CGNAT 100.64.x)",
+        "menu_ping": "🎮 Chasseur de Ping Gaming (Ping Cible < X ms)",
         "menu_unique": "💎 Obtenir une IP Inédite (Jamais vue)",
         "menu_timer": "⏱️ Boucle de Rotation Automatique",
         "menu_bench": "📊 Test de Latence Multi-Serveurs",
@@ -169,8 +168,8 @@ I18N = {
         "handshaking": "Connexion avec le routeur...",
         "press_enter": "Appuyez sur Entrée pour revenir au menu...",
         "re_cycling": "Nouvelle tentative: {reason}",
-        "anti_cgnat_active": "Anti-CGNAT Garanti (Rejet de 100.64.x / 10.x)",
         "target_filter": "Exige une IP commençant par {pools}",
+        "latency_target": "La latence doit être < {ms} ms",
         "bench_title": "Test de Latence Multi-Serveurs (Jeux & CDNs)",
         "bench_probing": "Test des routes européennes et serveurs DNS...",
         "pool_selector_title": "Sélecteur de Pool Algérie Télécom",
@@ -181,7 +180,6 @@ I18N = {
         "pool_dual": "Rapide Double - Soit 105.x OU 154.x",
         "pool_custom": "Préfixe / Sous-réseau Personnalisé (ex: 105.106., 41.107.)",
         "pool_back": "Retour au Menu Principal",
-        "force_public_prompt": "Forcer IP publique uniquement ? (refuser CGNAT) [O/n] : ",
         "lang_prompt": "Select Language / Choisissez la langue:\n  [1] English (EN)\n  [2] Français (FR)\nChoice / Choix [1-2, default: 1]: ",
         "copied_success": "✓ IP {ip} copiée dans le presse-papier !",
         "clipboard_not_found": "Outil presse-papier non trouvé. IP : {ip}",
@@ -1044,7 +1042,7 @@ def perform_smart_rotation(
     until_different=False, 
     unique_ever=False, 
     target_pools=None, 
-    force_public=False,
+    max_ping_ms=0,
     max_attempts=15,
     timeout=25,
     quiet=False
@@ -1062,8 +1060,8 @@ def perform_smart_rotation(
         print(f"\n[*] {tr('current_ip')} : \033[1;33m{old_ip}\033[0m [{pool_name}] (BRAS: {current.get('bras', 'N/A')})")
         if target_pools:
             print(f"[*] {tr('target_filter', pools=', '.join(target_pools))}")
-        if force_public:
-            print(f"[*] {tr('anti_cgnat_active')}")
+        if max_ping_ms > 0:
+            print(f"[*] {tr('latency_target', ms=max_ping_ms)}")
     
     attempt = 1
     total_start = time.time()
@@ -1132,8 +1130,10 @@ def perform_smart_rotation(
             re_cycle_reason = f"Previously seen IP ({new_ip})"
         elif target_pools and not matches_target_pools(new_ip, target_pools):
             re_cycle_reason = f"Target mismatch [{', '.join(target_pools)}] (got {new_ip})"
-        elif force_public and is_cgnat_ip(new_ip):
-            re_cycle_reason = f"Rejected CGNAT ({new_ip})"
+        elif max_ping_ms > 0:
+            ping_val = measure_ping_tcp("1.1.1.1", 53)
+            if ping_val > max_ping_ms:
+                re_cycle_reason = f"Ping {ping_val}ms > {max_ping_ms}ms"
 
         if re_cycle_reason:
             if not quiet:
@@ -1210,7 +1210,7 @@ class RotatorApiHandler(BaseHTTPRequestHandler):
                     "GET /status": "Current WAN status, IP, CGNAT, Latency",
                     "GET /bench": "Multi-server latency benchmark",
                     "POST /rotate": "Execute instant IP rotation",
-                    "GET /rotate": "Rotate with query params (?pool=105,154&public_only=1)"
+                    "GET /rotate": "Rotate with query params (?pool=105,154&max_ping=30)"
                 }
             })
         elif path == "/status":
@@ -1255,7 +1255,7 @@ class RotatorApiHandler(BaseHTTPRequestHandler):
     def _handle_rotate(self, query):
         pools_raw = query.get("pool", [""])[0]
         pools = [p.strip() for p in pools_raw.split(",") if p.strip()] if pools_raw else []
-        force_public = query.get("public_only", ["0"])[0] in ("1", "true", "True")
+        max_ping = float(query.get("max_ping", [0])[0])
 
         try:
             self.client.login()
@@ -1264,7 +1264,7 @@ class RotatorApiHandler(BaseHTTPRequestHandler):
                 self.client,
                 until_different=True,
                 target_pools=pools,
-                force_public=force_public,
+                max_ping_ms=max_ping,
                 quiet=True
             )
             duration = round(time.time() - t0, 2)
@@ -1553,8 +1553,7 @@ def interactive_pool_selector(client: BaseRouterDriver):
         print("Invalid selection.")
         return
 
-    anti_cgnat = input(tr("force_public_prompt")).strip().lower() not in ("n", "non")
-    perform_smart_rotation(client, target_pools=targets, force_public=anti_cgnat)
+    perform_smart_rotation(client, target_pools=targets)
     input(f"\n{tr('press_enter')}")
 
 def interactive_benchmark_screen():
@@ -1602,7 +1601,7 @@ def interactive_menu(client: BaseRouterDriver):
 
         print(f"\n  \033[1;36m[1]\033[0m {tr('menu_rotate')}")
         print(f"  \033[1;36m[2]\033[0m {tr('menu_pool')}")
-        print(f"  \033[1;36m[3]\033[0m {tr('menu_cgnat')}")
+        print(f"  \033[1;36m[3]\033[0m {tr('menu_ping')}")
         print(f"  \033[1;36m[4]\033[0m {tr('menu_unique')}")
         print(f"  \033[1;36m[5]\033[0m {tr('menu_timer')}")
         print(f"  \033[1;36m[6]\033[0m {tr('menu_bench')}")
@@ -1622,7 +1621,9 @@ def interactive_menu(client: BaseRouterDriver):
         elif choice == "2":
             interactive_pool_selector(client)
         elif choice == "3":
-            perform_smart_rotation(client, until_different=True, force_public=True)
+            threshold_in = input("Target max ping (ms) [default: 25]: ").strip()
+            max_ms = float(threshold_in) if threshold_in else 25.0
+            perform_smart_rotation(client, max_ping_ms=max_ms)
             input(f"\n{tr('press_enter')}")
         elif choice == "4":
             perform_smart_rotation(client, unique_ever=True)
@@ -1678,8 +1679,8 @@ def main():
     parser.add_argument("-r", "--rotate", action="store_true", help="Rotate WAN IP immediately and exit")
     parser.add_argument("-u", "--until-different", action="store_true", help="Rotate until leased IP differs from current")
     parser.add_argument("-p", "--pool", default="", help="Target IP pool or prefix (e.g. '105', '154', '41', or '105.106.')")
-    parser.add_argument("--public-only", action="store_true", help="Reject CGNAT (100.64.x / 10.x) and require real public IP")
     parser.add_argument("--unique-ever", action="store_true", help="Rotate until leased IP was never seen in history")
+    parser.add_argument("--max-ping", type=float, default=0, help="Rotate until ping latency to 1.1.1.1 is under X ms")
     parser.add_argument("--bench", action="store_true", help="Run multi-server latency benchmark and exit")
     parser.add_argument("-s", "--status", action="store_true", help="Show live WAN dashboard and exit")
     parser.add_argument("--history", action="store_true", help="Print persistent rotation history and exit")
@@ -1745,15 +1746,15 @@ def main():
 
         target_prefixes = [p.strip() for p in args.pool.split(",") if p.strip()] if args.pool else []
 
-        if args.rotate or args.until_different or args.unique_ever or target_prefixes or args.public_only:
+        if args.rotate or args.until_different or args.unique_ever or args.max_ping > 0 or target_prefixes:
             client.login()
             t0 = time.time()
             old_ip, new_ip = perform_smart_rotation(
                 client,
-                until_different=args.until_different or bool(target_prefixes) or args.public_only,
+                until_different=args.until_different or bool(target_prefixes),
                 unique_ever=args.unique_ever,
                 target_pools=target_prefixes,
-                force_public=args.public_only,
+                max_ping_ms=args.max_ping,
                 timeout=args.timeout,
                 quiet=args.json
             )

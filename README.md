@@ -7,7 +7,7 @@
 [![ISP](https://img.shields.io/badge/ISP-Algérie%20Télécom%20(FTTH%20%2F%20VDSL)-orange.svg)]()
 [![Telegram](https://img.shields.io/badge/Telegram-@x4D7217A7A6F-2CA5E0.svg?logo=telegram)](https://t.me/x4D7217A7A6F)
 
-A lightweight, zero-dependency Python tool to rotate WAN IP addresses, bypass CGNAT (`100.64.x`), and target specific IP subnets (`105.x`, `154.x`, `41.x`, `197.x`) on **Algérie Télécom** fibre and DSL connections.
+A lightweight, zero-dependency Python tool to rotate WAN IP addresses, hunt optimal gaming routes, and target specific IP subnets (`105.x`, `154.x`, `41.x`, `197.x`) on **Algérie Télécom** fibre and DSL connections.
 
 > 📖 **[اضغط هنا لقراءة الدليل الكامل باللغة العربية (README_AR.md)](README_AR.md)**
 
@@ -27,8 +27,8 @@ A lightweight, zero-dependency Python tool to rotate WAN IP addresses, bypass CG
 ## 🎯 Why this tool?
 
 On Algérie Télécom (Idoom Fibre / VDSL / ADSL):
-1. **CGNAT Issues:** The ISP often assigns shared CGNAT IPs (`100.64.0.0/10`) which breaks port forwarding, causes Strict NAT / Type 3 in games (PlayStation, Xbox, PC), and increases packet loss.
-2. **Subnet Quality Variations:** Certain IP pools (e.g. `105.x` vs `154.x` vs `41.x`) have vastly different routing paths and latency towards European game servers (Paris, Frankfurt, Madrid).
+1. **Subnet Routing & Latency Variations:** Certain IP pools (e.g. `105.x` vs `154.x` vs `41.x`) have vastly different transit routes, some adding severe latency towards European game servers (Paris, Frankfurt, Madrid).
+2. **Suboptimal Routing Paths:** Reconnecting automatically finds the fastest submarine cable route with minimal ping.
 3. **Slow Router Reboots:** Restarting the optical network terminal (ONT) takes 2-3 minutes. This tool bounces the PPPoE session directly via web APIs in **under 3 seconds**.
 
 ---
@@ -51,7 +51,7 @@ This utility was developed and **rigorously tested in real-world conditions on A
   * **Huawei EchoLife / OptiXstar** (HG8145X6, HG8145V5, HG8245H, HG8245W5)
   * **FiberHome** (HG6145D2, HG6145F1, AN5506) — with built-in pure-Python AES-128-CBC auth cipher
 * **Auto-Discovery:** Automatically detects gateway IP (`192.168.1.1`) and fingerprints router brand on first run.
-* **Anti-CGNAT Filter:** Rejects `100.64.x` / `10.x` addresses until a real public 1:1 IP is leased.
+* **Smart Gaming Route Hunter:** Automatically cycles IPs until ping to gaming / DNS benchmarks drops below your target threshold (e.g. `< 20ms` or `< 25ms`).
 * **IP Pool Hunter:** Force rotation until you land on your preferred pool (`105`, `154`, `41`, `197`).
 * **REST API Daemon:** Built-in lightweight HTTP server (`--serve 8080`) to trigger rotations from external bots or scripts.
 * **Multi-Language TUI:** Interactive console interface supporting both English and French.
@@ -94,7 +94,7 @@ curl -sSL https://raw.githubusercontent.com/Azeddine-ta/dz-ip-rotator/main/chang
 
   [1] ⚡ Fast IP Rotate (Instant Single Cycle)
   [2] 🎯 Target Specific IP Pool (105.x, 154.x, 41.x, 197.x)
-  [3] 🛡️ Guarantee Real Public IP (Auto-reject CGNAT 100.64.x)
+  [3] 🎮 Smart Gaming Route Hunter (Target Ping < X ms)
   [4] 💎 Rotate Until Never-Seen IP (Permanent Unique)
   [5] ⏱️ Auto-Rotate Timer Loop
   [6] 📊 Multi-Server Latency Benchmark
@@ -121,8 +121,8 @@ python3 change_ip.py -r -u
 # Force rotation into 105.x subnet
 python3 change_ip.py -r -p 105
 
-# Guarantee real public IP (skip CGNAT 100.64.x)
-python3 change_ip.py -r --public-only
+# Hunt for gaming route with ping under 20ms (Valorant, CS2, etc.)
+python3 change_ip.py -r --max-ping 20
 
 # Output status in JSON format (for scripts & bots)
 python3 change_ip.py -s --json
