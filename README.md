@@ -109,7 +109,7 @@ Not sure what your router password is? Here are the official defaults:
 │  Hardware/OS  : FiberHome HG6145D2
 │  Internet WAN : Connected (Uptime: 04h 12m)
 ├──────────────────────────────────────────────────────────┤
-│  Current IP   : 41.99.80.60 [✓ Public 1:1]
+│  Current IP   : 105.106.12.34 [✓ Public 1:1]
 │  Pool Subnet  : 41.x (Algiers/Centre) │ BRAS: FH_BRAS
 │  Ping Latency : 17.4 ms (1.1.1.1)
 ╰──────────────────────────────────────────────────────────╯
@@ -160,12 +160,12 @@ python3 change_ip.py --bench
 ### JSON Output Sample (`-s --json`)
 ```json
 {
-  "ip": "41.99.80.60",
+  "ip": "105.106.12.34",
   "status": "Connected",
   "uptime": "04h 12m",
   "ping_ms": 17.4,
   "is_cgnat": false,
-  "pool": "41.x",
+  "pool": "105.x",
   "vendor": "fiberhome"
 }
 ```

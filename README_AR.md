@@ -158,12 +158,12 @@ python3 change_ip.py -s --json
 **نموذج المخرجات:**
 ```json
 {
-  "ip": "41.99.80.60",
+  "ip": "105.106.12.34",
   "status": "Connected",
   "uptime": "02h 45m 12s",
   "ping_ms": 18.4,
   "is_cgnat": false,
-  "pool": "41.x (Algiers/Centre)",
+  "pool": "105.x (Oran/West)",
   "vendor": "fiberhome"
 }
 ```
