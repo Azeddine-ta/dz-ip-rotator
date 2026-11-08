@@ -971,6 +971,112 @@ class UPnPDriver(BaseRouterDriver):
         return False
 
 
+class ZTEDriver(BaseRouterDriver):
+    def __init__(self, host, port=80, username="admin", password="admin", protocol=None):
+        super().__init__(host, port, username, password, protocol)
+        self.vendor_name = "ZTE ZXHN"
+        self.cookie = None
+        self.session_token = None
+
+    def determine_protocol(self):
+        if self.protocol:
+            self.base_url = f"{self.protocol}://{self.host}:{self.port}"
+            return
+        for proto in ["http", "https"]:
+            try:
+                url = f"{proto}://{self.host}:{self.port}/getpage.gch"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with self.opener.open(req, timeout=2.0) as resp:
+                    if resp.status in (200, 302, 403, 404):
+                        self.protocol = proto
+                        self.base_url = f"{proto}://{self.host}:{self.port}"
+                        return
+            except Exception:
+                continue
+        self.protocol = "http"
+        self.base_url = f"http://{self.host}:{self.port}"
+
+    def _request(self, path: str, data: dict = None, extra_headers: dict = None) -> str:
+        if not self.base_url:
+            self.determine_protocol()
+        url = self.base_url + path
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            "Referer": self.base_url + "/"
+        }
+        if self.cookie:
+            headers["Cookie"] = self.cookie
+        if extra_headers:
+            headers.update(extra_headers)
+
+        encoded_data = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
+        req = urllib.request.Request(url, data=encoded_data, headers=headers)
+        with self.opener.open(req, timeout=8) as resp:
+            set_cookie = resp.headers.get("Set-Cookie")
+            if set_cookie:
+                self.cookie = set_cookie.split(";")[0]
+            return resp.read().decode("utf-8", errors="ignore")
+
+    def login(self) -> bool:
+        self.determine_protocol()
+        try:
+            html = self._request("/getpage.gch?pid=1002")
+        except Exception:
+            html = self._request("/")
+
+        token_match = re.search(r'name=["\'](?:Frm_Logintoken|_SESSION_TOKEN)["\']\s+value=["\']([^"\']+)["\']', html)
+        token = token_match.group(1) if token_match else ""
+
+        login_payload = {
+            "Username": self.username,
+            "Password": self.password,
+            "action": "login"
+        }
+        if token:
+            login_payload["Frm_Logintoken"] = token
+            login_payload["_SESSION_TOKEN"] = token
+
+        resp = self._request("/getpage.gch?pid=1002", data=login_payload)
+        if "login" in resp.lower() and ("error" in resp.lower() or "failed" in resp.lower() or "wrong" in resp.lower()):
+            raise RuntimeError("ZTE Authentication failed: Invalid username or password.")
+        return True
+
+    def logout(self):
+        try:
+            self._request("/getpage.gch?pid=1002&nextpage=logout.gch")
+        except Exception:
+            pass
+
+    def get_full_wan_status(self) -> dict:
+        ext_ip = None
+        try:
+            _, _, ext_ip = check_cgnat("1.1.1.1")
+        except Exception:
+            pass
+        ip = ext_ip if ext_ip and ext_ip not in ("0.0.0.0", "Unknown") else "0.0.0.0"
+        return {
+            "name": "ZTE ZXHN WAN",
+            "status": "Connected" if ip != "0.0.0.0" else "Disconnected",
+            "uptime": "Active",
+            "ip": ip,
+            "gateway": self.host,
+            "dns": "1.1.1.1",
+            "bras": "ZTE_BRAS",
+            "domain": "WAN_ZTE"
+        }
+
+    def reconnect_pppoe(self, delay: float = 1.0) -> bool:
+        try:
+            payload = {"IF_ACTION": "devrestart"}
+            if self.session_token:
+                payload["_SESSION_TOKEN"] = self.session_token
+            self._request("/getpage.gch?pid=1002&nextpage=manager_dev_conf_t.gch", data=payload)
+            time.sleep(delay)
+            return True
+        except Exception:
+            return False
+
+
 def detect_router_vendor(host: str, port: int) -> str:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -1007,6 +1113,8 @@ def detect_router_vendor(host: str, port: int) -> str:
 def create_driver(vendor: str, host: str, port: int, user: str, password: str) -> BaseRouterDriver:
     if vendor == "fiberhome":
         return FiberHomeDriver(host=host, port=port, username=user, password=password)
+    elif vendor == "zte":
+        return ZTEDriver(host=host, port=port, username=user, password=password)
     elif vendor == "upnp":
         return UPnPDriver(host=host, port=port, username=user, password=password)
     else:
