@@ -33,6 +33,19 @@ On Algérie Télécom (Idoom Fibre / VDSL / ADSL):
 
 ---
 
+## 🧪 Tested & Confirmed Hardware (Real-World Verified)
+
+This utility was developed and **rigorously tested in real-world conditions on Algérie Télécom (Idoom Fibre)** on the following hardware:
+
+| Brand / ONT Model | Firmware / Notes | Status |
+| :--- | :--- | :---: |
+| **Huawei EchoLife / OptiXstar** (HG8145V5, HG8245H, HG8145X6) | Tested with `telecomadmin` & `admin`. Instant WAN bounce. | ✅ **Verified & Working** |
+| **FiberHome** (HG6145D2, HG6145F1) | Tested on HG6145D2 with custom AES-128 login encryption. | ✅ **Verified & Working** |
+| **ZTE ZXHN** (F660, F670, F680) | Supported via Web GUI session reboot. | 🟡 Supported |
+| **Universal UPnP IGD** (OpenWrt, ASUS, TP-Link) | Standard UPnP `ForceTermination` action. | 🟢 Supported |
+
+---
+
 ## 🚀 Features
 
 * **Zero Dependencies:** Built entirely with Python's standard library (`urllib`, `socket`, `json`). No `pip install` required.
@@ -183,3 +196,4 @@ curl "http://127.0.0.1:8080/rotate?pool=105&public_only=1"
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+
