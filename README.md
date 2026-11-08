@@ -41,7 +41,8 @@ This utility was developed and **rigorously tested in real-world conditions on A
 | :--- | :--- | :---: |
 | **Huawei EchoLife / OptiXstar** (HG8145V5, HG8245H, HG8145X6) | Tested with `telecomadmin` & `admin`. Instant WAN bounce. | ✅ **Verified & Working** |
 | **FiberHome** (HG6145D2, HG6145F1) | Tested on HG6145D2 with custom AES-128 login encryption. | ✅ **Verified & Working** |
-| **ZTE ZXHN** (F660, F670, F680) | Supported via Web GUI session reboot. | 🟡 Supported |
+| **ZTE ZXHN & Wi-Fi 6** (F660, F6640, F6600, F670, F680) | Multi-endpoint support (F660 & Wi-Fi 6 F6640) with salted SHA256/MD5 auth. | 🟢 Supported |
+| **Nokia / Alcatel-Lucent** (G-240W-F, G-140W-MD, XS-2426G-A) | Tested with `userAdmin` and sticker credentials. Web API WAN bounce. | 🟢 Supported |
 | **Universal UPnP IGD** (OpenWrt, ASUS, TP-Link) | Standard UPnP `ForceTermination` action. | 🟢 Supported |
 
 ---
@@ -52,7 +53,8 @@ This utility was developed and **rigorously tested in real-world conditions on A
 * **Multi-Vendor Router Support:**
   * **Huawei EchoLife / OptiXstar** (HG8145X6, HG8145V5, HG8245H, HG8245W5)
   * **FiberHome** (HG6145D2, HG6145F1, AN5506) — with built-in pure-Python AES-128-CBC auth cipher
-  * **ZTE ZXHN** (F660, F670, F680)
+  * **ZTE ZXHN & Wi-Fi 6** (F660, F6640, F6600, F670, F680) — auto-adaptive token & hash auth
+  * **Nokia / Alcatel-Lucent** (G-240W-F, G-140W-MD, XS-2426G-A) — tailored `userAdmin` presets
   * **Universal UPnP IGD** (TP-Link, ASUS, Keenetic, OpenWrt, FritzBox)
 * **Auto-Discovery:** Automatically detects gateway IP (`192.168.1.1`) and fingerprints router brand on first run.
 * **Anti-CGNAT Filter:** Rejects `100.64.x` / `10.x` addresses until a real public 1:1 IP is leased.
