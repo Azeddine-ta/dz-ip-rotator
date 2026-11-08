@@ -931,7 +931,16 @@ class UPnPDriver(BaseRouterDriver):
         self.service_type = "urn:schemas-upnp-org:service:WANPPPConnection:1"
 
     def login(self) -> bool:
-        return True
+        for probe_path in ["/ctl/PPPConn", "/ipc", "/upnp/control/WANPPPConnection"]:
+            try:
+                url = f"http://{self.host}:{self.port}{probe_path}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with self.opener.open(req, timeout=2) as resp:
+                    if resp.status in (200, 400, 405, 500):
+                        return True
+            except Exception:
+                continue
+        raise RuntimeError(f"Could not reach UPnP IGD service at http://{self.host}:{self.port} (Make sure UPnP is enabled on your router).")
 
     def get_full_wan_status(self) -> dict:
         _, _, ext_ip = check_cgnat("1.1.1.1")
@@ -1128,7 +1137,9 @@ def perform_smart_rotation(
     
     while attempt <= max_attempts:
         cycle_start = time.time()
-        client.reconnect_pppoe()
+        ok = client.reconnect_pppoe()
+        if ok is False and not quiet:
+            print(f"\n\033[1;31m[!] Warning: Router did not accept reconnection command. Check credentials/model.\033[0m")
         
         new_ip = None
         new_status = None
@@ -1464,6 +1475,9 @@ def run_setup_wizard() -> dict:
     while not password:
         print("Password cannot be empty.")
         password = input(f"Enter router password for '{username}': ").strip()
+
+    if any('\u0600' <= c <= '\u06ff' for c in password):
+        print("\033[1;33m⚠️ Warning: Your password contains Arabic characters. Verify your keyboard language layout!\033[0m")
 
     print("\nTesting connection...")
     driver = create_driver(vendor, host, port, username, password)
