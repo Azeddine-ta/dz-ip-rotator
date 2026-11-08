@@ -797,8 +797,8 @@ class FiberHomeDriver(BaseRouterDriver):
             res_code = resp.get("login_result")
             if res_code == 0:
                 return True
-            elif res_code == 1:
-                raise RuntimeError("FiberHome Authentication failed: Incorrect password.")
+            elif res_code in (1, 4):
+                raise RuntimeError("FiberHome Authentication failed: Incorrect username or password (check credentials on router sticker, or try 'user' / 'user').")
             elif res_code == 2:
                 # Session collision: reset stale session and retry
                 self._request("/cgi-bin/ajax", data={
