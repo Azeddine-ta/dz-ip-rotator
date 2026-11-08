@@ -440,10 +440,11 @@ class BaseRouterDriver:
             self.base_url = f"{self.protocol}://{self.host}:{self.port}"
             return
 
-        for proto in ["https", "http"]:
+        proto_candidates = ["http", "https"] if self.port == 80 else ["https", "http"]
+        for proto in proto_candidates:
             test_url = f"{proto}://{self.host}:{self.port}/"
             try:
-                req = urllib.request.Request(test_url, data=b"", headers={"User-Agent": "Mozilla/5.0"})
+                req = urllib.request.Request(test_url, headers={"User-Agent": "Mozilla/5.0"})
                 with self.opener.open(req, timeout=2.5) as resp:
                     if resp.status in (200, 302, 401, 403, 404):
                         self.protocol = proto
@@ -452,8 +453,9 @@ class BaseRouterDriver:
             except Exception:
                 continue
 
-        self.protocol = "http"
-        self.base_url = f"http://{self.host}:{self.port}"
+        default_proto = "http" if self.port == 80 else "https"
+        self.protocol = default_proto
+        self.base_url = f"{default_proto}://{self.host}:{self.port}"
 
     def login(self) -> bool:
         raise NotImplementedError
@@ -481,20 +483,22 @@ class HuaweiDriver(BaseRouterDriver):
             self.base_url = f"{self.protocol}://{self.host}:{self.port}"
             return
 
-        for proto in ["https", "http"]:
-            test_url = f"{proto}://{self.host}:{self.port}/asp/GetRandCount.asp"
+        proto_candidates = ["http", "https"] if self.port == 80 else ["https", "http"]
+        for proto in proto_candidates:
+            test_url = f"{proto}://{self.host}:{self.port}/"
             try:
-                req = urllib.request.Request(test_url, data=b"", headers={"User-Agent": "Mozilla/5.0"})
-                with self.opener.open(req, timeout=2.5) as resp:
-                    if resp.status in (200, 302, 403, 404):
+                req = urllib.request.Request(test_url, headers={"User-Agent": "Mozilla/5.0"})
+                with self.opener.open(req, timeout=2.0) as resp:
+                    if resp.status in (200, 302, 401, 403, 404):
                         self.protocol = proto
                         self.base_url = f"{proto}://{self.host}:{self.port}"
                         return
             except Exception:
                 continue
 
-        self.protocol = "https"
-        self.base_url = f"https://{self.host}:{self.port}"
+        default_proto = "http" if self.port == 80 else "https"
+        self.protocol = default_proto
+        self.base_url = f"{default_proto}://{self.host}:{self.port}"
 
     def _request(self, path: str, data: dict = None, extra_headers: dict = None) -> str:
         if not self.base_url:
@@ -512,11 +516,26 @@ class HuaweiDriver(BaseRouterDriver):
 
         encoded_data = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
         req = urllib.request.Request(url, data=encoded_data, headers=headers)
-        with self.opener.open(req, timeout=8) as resp:
-            set_cookie = resp.headers.get("Set-Cookie")
-            if set_cookie and "Cookie=" in set_cookie:
-                self.sid_cookie = set_cookie.split(";")[0]
-            return resp.read().decode("utf-8", errors="ignore")
+        try:
+            with self.opener.open(req, timeout=8) as resp:
+                set_cookie = resp.headers.get("Set-Cookie")
+                if set_cookie and "Cookie=" in set_cookie:
+                    self.sid_cookie = set_cookie.split(";")[0]
+                return resp.read().decode("utf-8", errors="ignore")
+        except urllib.error.URLError as e:
+            # Auto-fallback from HTTPS to HTTP if port 80 or SSL mismatch encountered
+            err_str = str(e).lower()
+            if ("wrong_version_number" in err_str or "ssl" in err_str) and self.base_url.startswith("https://"):
+                self.protocol = "http"
+                self.base_url = f"http://{self.host}:{self.port}"
+                retry_url = self.base_url + path
+                req_retry = urllib.request.Request(retry_url, data=encoded_data, headers=headers)
+                with self.opener.open(req_retry, timeout=8) as resp:
+                    set_cookie = resp.headers.get("Set-Cookie")
+                    if set_cookie and "Cookie=" in set_cookie:
+                        self.sid_cookie = set_cookie.split(";")[0]
+                    return resp.read().decode("utf-8", errors="ignore")
+            raise
 
     def login(self) -> bool:
         self.determine_protocol()
