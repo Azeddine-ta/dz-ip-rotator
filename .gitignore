@@ -1,0 +1,14 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local credentials & state
+.dz_router_optimizer.json
+*.local.json
+credentials.json
+
+# System & Editor files
+.DS_Store
+.vscode/
+.idea/
