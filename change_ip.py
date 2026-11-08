@@ -241,6 +241,16 @@ def detect_default_gateway() -> str:
         except Exception:
             pass
 
+    # macOS / BSD default route
+    if sys.platform == 'darwin':
+        try:
+            out = subprocess.check_output(["route", "-n", "get", "default"], stderr=subprocess.DEVNULL).decode()
+            for line in out.splitlines():
+                if "gateway:" in line:
+                    return line.split("gateway:")[1].strip()
+        except Exception:
+            pass
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(('1.1.1.1', 80))
@@ -251,7 +261,7 @@ def detect_default_gateway() -> str:
     except Exception:
         pass
 
-    return "192.168.100.1"
+    return "192.168.1.1"
 
 # ==============================================================================
 # 2. NETWORK TELEMETRY, CGNAT & BENCHMARK
@@ -351,7 +361,14 @@ def is_cgnat_ip(ip: str) -> bool:
     return False
 
 def copy_to_clipboard(text: str) -> bool:
-    for cmd in [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["clip"]]:
+    for cmd in [
+        ["termux-clipboard-set"],
+        ["pbcopy"],
+        ["wl-copy"],
+        ["xclip", "-selection", "clipboard"],
+        ["xsel", "--clipboard", "--input"],
+        ["clip"]
+    ]:
         try:
             p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
             p.communicate(text.encode("utf-8"))
@@ -1646,6 +1663,9 @@ def interactive_menu(client: BaseRouterDriver):
 # ==============================================================================
 
 def main():
+    if os.name == 'nt':
+        os.system("")  # Enable ANSI escape sequences on Windows console
+
     parser = argparse.ArgumentParser(
         description="DZ IP ROTATOR & ROUTE OPTIMIZER (Algérie Télécom Edition v5.0)"
     )
