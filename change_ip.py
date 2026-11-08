@@ -6,8 +6,6 @@ Universal, Zero-Dependency WAN IP Rotator, CGNAT Hunter, and Latency Optimizer.
 Supported Hardware & Protocols:
   - Huawei EchoLife / OptiXstar (HG8145X6, HG8145V5, HG8245H, HG8245W5)
   - FiberHome (HG6145F1, HG6145D2, HG6143D, AN5506)
-  - ZTE ZXHN & Wi-Fi 6 (F660, F6640, F6600, F670, F680)
-  - Nokia / Alcatel-Lucent (G-240W-F, G-140W-MD, XS-2426G-A)
   - Universal UPnP IGD (OpenWrt, ASUS, TP-Link, Keenetic, FritzBox)
 
 Developer : Azeddine
@@ -20,7 +18,6 @@ import time
 import json
 import ssl
 import base64
-import hashlib
 import socket
 import struct
 import getpass
@@ -973,290 +970,11 @@ class UPnPDriver(BaseRouterDriver):
         return False
 
 
-class ZTEDriver(BaseRouterDriver):
-    def __init__(self, host="192.168.1.1", port=80, username="admin", password="admin", protocol=None):
-        super().__init__(host, port, username, password, protocol)
-        self.vendor_name = "ZTE ZXHN & Wi-Fi 6"
-        self.cookie = None
-        self.session_token = None
-        self.login_endpoint = "/getpage.gch?pid=1002"
-
-    def determine_protocol(self):
-        if self.protocol:
-            self.base_url = f"{self.protocol}://{self.host}:{self.port}"
-            return
-        for proto in ["http", "https"]:
-            for path in ["/getpage.gch?pid=1002", "/login.gch", "/"]:
-                try:
-                    url = f"{proto}://{self.host}:{self.port}{path}"
-                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    with self.opener.open(req, timeout=2.0) as resp:
-                        if resp.status in (200, 302, 403):
-                            self.protocol = proto
-                            self.base_url = f"{proto}://{self.host}:{self.port}"
-                            self.login_endpoint = path
-                            return
-                except Exception:
-                    continue
-        self.protocol = "http"
-        self.base_url = f"http://{self.host}:{self.port}"
-
-    def _request(self, path: str, data: dict = None, extra_headers: dict = None) -> str:
-        if not self.base_url:
-            self.determine_protocol()
-        url = self.base_url + path
-        headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-            "Referer": self.base_url + "/"
-        }
-        if self.cookie:
-            headers["Cookie"] = self.cookie
-        if extra_headers:
-            headers.update(extra_headers)
-
-        encoded_data = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
-        req = urllib.request.Request(url, data=encoded_data, headers=headers)
-        with self.opener.open(req, timeout=8) as resp:
-            set_cookie = resp.headers.get("Set-Cookie")
-            if set_cookie:
-                cookies = [c.split(";")[0] for c in set_cookie.split(",") if "=" in c]
-                self.cookie = "; ".join(cookies) if cookies else set_cookie.split(";")[0]
-            return resp.read().decode("utf-8", errors="ignore")
-
-    def login(self) -> bool:
-        self.determine_protocol()
-        html = ""
-        used_path = self.login_endpoint
-        try:
-            html = self._request(self.login_endpoint)
-        except Exception:
-            for fallback in ["/getpage.gch?pid=1002", "/login.gch", "/"]:
-                try:
-                    html = self._request(fallback)
-                    used_path = fallback
-                    break
-                except Exception:
-                    pass
-
-        token_match = re.search(r'name=["\'](?:Frm_Logintoken|_SESSION_TOKEN)["\']\s+value=["\']([^"\']+)["\']', html)
-        token = token_match.group(1) if token_match else ""
-        if token:
-            self.session_token = token
-
-        # Candidate passwords: plain first, then sha256/md5 salted if token exists
-        candidate_passwords = [self.password]
-        if token:
-            # Many ZTE routers hash password + token with SHA256 or MD5
-            salted_sha = hashlib.sha256((self.password + token).encode()).hexdigest()
-            salted_md5 = hashlib.md5((self.password + token).encode()).hexdigest()
-            plain_sha = hashlib.sha256(self.password.encode()).hexdigest()
-            candidate_passwords.extend([salted_sha, salted_md5, plain_sha])
-
-        for cand_pass in candidate_passwords:
-            login_payload = {
-                "Username": self.username,
-                "Password": cand_pass,
-                "action": "login"
-            }
-            if token:
-                login_payload["Frm_Logintoken"] = token
-                login_payload["_SESSION_TOKEN"] = token
-
-            try:
-                resp = self._request(used_path, data=login_payload)
-                resp_l = resp.lower()
-                if not ("login" in resp_l and ("error" in resp_l or "failed" in resp_l or "wrong" in resp_l or "fail" in resp_l)):
-                    return True
-            except Exception:
-                pass
-
-        raise RuntimeError("ZTE Authentication failed: Invalid username or password (check credentials on router sticker, or try 'admin' / 'admin' or 'admin' / 'Web@0063').")
-
-    def logout(self):
-        for path in ["/getpage.gch?pid=1002&nextpage=logout.gch", "/logout.gch", "/logout"]:
-            try:
-                self._request(path)
-                break
-            except Exception:
-                pass
-
-    def get_full_wan_status(self) -> dict:
-        ext_ip = None
-        try:
-            _, _, ext_ip = check_cgnat("1.1.1.1")
-        except Exception:
-            pass
-        ip = ext_ip if ext_ip and ext_ip not in ("0.0.0.0", "Unknown") else "0.0.0.0"
-        return {
-            "driver": "ZTE",
-            "name": "ZTE ZXHN & Wi-Fi 6 (F660/F6640/F6600/F670/F680)",
-            "status": "Connected" if ip != "0.0.0.0" else "Disconnected",
-            "uptime": "Active",
-            "ip": ip,
-            "gateway": self.host,
-            "dns": "1.1.1.1",
-            "bras": "ZTE_BRAS",
-            "domain": "WAN_ZTE"
-        }
-
-    def reconnect_pppoe(self, delay: float = 1.0) -> bool:
-        endpoints_to_try = [
-            ("/getpage.gch?pid=1002&nextpage=net_wan_conf_t.gch", {"IF_ACTION": "apply", "Disconnect": "1"}),
-            ("/getpage.gch?pid=1002&nextpage=manager_dev_conf_t.gch", {"IF_ACTION": "devrestart"}),
-            ("/reboot.gch", {"action": "reboot"}),
-            ("/api/system/reboot", {"action": "reboot"})
-        ]
-        for path, payload in endpoints_to_try:
-            if self.session_token:
-                payload["_SESSION_TOKEN"] = self.session_token
-            try:
-                self._request(path, data=payload)
-                time.sleep(delay)
-                return True
-            except Exception:
-                continue
-        return False
-
-
-class NokiaDriver(BaseRouterDriver):
-    def __init__(self, host="192.168.1.254", port=80, username="userAdmin", password="", protocol=None):
-        super().__init__(host, port, username, password, protocol)
-        self.vendor_name = "Nokia / Alcatel-Lucent GPON"
-        self.cookie = None
-        self.login_endpoint = "/login.cgi"
-
-    def determine_protocol(self):
-        if self.protocol:
-            self.base_url = f"{self.protocol}://{self.host}:{self.port}"
-            return
-        for proto in ["http", "https"]:
-            for path in ["/login.cgi", "/login.html", "/"]:
-                try:
-                    url = f"{proto}://{self.host}:{self.port}{path}"
-                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    with self.opener.open(req, timeout=2.0) as resp:
-                        if resp.status in (200, 302, 403):
-                            self.protocol = proto
-                            self.base_url = f"{proto}://{self.host}:{self.port}"
-                            if path in ("/login.cgi", "/login.html"):
-                                self.login_endpoint = path
-                            return
-                except Exception:
-                    continue
-        self.protocol = "http"
-        self.base_url = f"http://{self.host}:{self.port}"
-
-    def _request(self, path: str, data: dict = None, extra_headers: dict = None) -> tuple:
-        if not self.base_url:
-            self.determine_protocol()
-        url = self.base_url + path
-        headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0",
-            "Referer": self.base_url + "/",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        }
-        if self.cookie:
-            headers["Cookie"] = self.cookie
-        if extra_headers:
-            headers.update(extra_headers)
-
-        encoded_data = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
-        req = urllib.request.Request(url, data=encoded_data, headers=headers)
-        with self.opener.open(req, timeout=10) as resp:
-            set_cookie = resp.headers.get("Set-Cookie")
-            if set_cookie:
-                cookies = [c.split(";")[0] for c in set_cookie.split(",") if "=" in c]
-                self.cookie = "; ".join(cookies) if cookies else set_cookie.split(";")[0]
-            body = resp.read().decode("utf-8", errors="ignore")
-            return resp.status, body
-
-    def login(self) -> bool:
-        self.determine_protocol()
-        html = ""
-        try:
-            _, html = self._request(self.login_endpoint)
-        except Exception:
-            try:
-                _, html = self._request("/")
-            except Exception:
-                pass
-
-        payload = {
-            "username": self.username,
-            "password": self.password,
-            "UserName": self.username,
-            "PassWord": self.password,
-            "psd": self.password,
-            "action": "login"
-        }
-
-        token_match = re.search(r'name=["\'](?:csrf_token|token|session_token|anticsrf)["\']\s+value=["\']([^"\']+)["\']', html, re.I)
-        if token_match:
-            payload["csrf_token"] = token_match.group(1)
-
-        target_endpoint = "/login.cgi" if "/login.cgi" in html or self.login_endpoint == "/login.cgi" else self.login_endpoint
-        _, resp_body = self._request(target_endpoint, data=payload)
-        resp_lower = resp_body.lower()
-
-        if "invalid username" in resp_lower or "authentication failed" in resp_lower or "password error" in resp_lower or "incorrect password" in resp_lower:
-            raise RuntimeError("Nokia Authentication failed: Invalid username or password (check router sticker for 'userAdmin' password, or try 'admin').")
-
-        return True
-
-    def logout(self):
-        for path in ["/logout.cgi", "/cgi-bin/logout.cgi", "/logout"]:
-            try:
-                self._request(path)
-                break
-            except Exception:
-                pass
-
-    def get_full_wan_status(self) -> dict:
-        ext_ip = None
-        try:
-            _, _, ext_ip = check_cgnat("1.1.1.1")
-        except Exception:
-            pass
-        ip = ext_ip if ext_ip and ext_ip not in ("0.0.0.0", "Unknown") else "0.0.0.0"
-        return {
-            "driver": "Nokia",
-            "name": "Nokia GPON ONT (G-240W-F / G-140W / XS-2426)",
-            "status": "Connected" if ip != "0.0.0.0" else "Disconnected",
-            "uptime": "Active",
-            "ip": ip,
-            "gateway": self.host,
-            "dns": "1.1.1.1",
-            "bras": "Nokia_BRAS",
-            "domain": "WAN_NOKIA"
-        }
-
-    def reconnect_pppoe(self, delay: float = 1.0) -> bool:
-        for wan_path, payload in [
-            ("/wan.cgi", {"action": "renew"}),
-            ("/network/wan.cgi", {"action": "renew"}),
-            ("/cgi-bin/wan.cgi", {"action": "renew"}),
-            ("/reboot.cgi", {"action": "reboot"}),
-            ("/reboot.cgi", {"reboot": "1"}),
-            ("/cgi-bin/reboot.cgi", {"action": "reboot"}),
-        ]:
-            try:
-                self._request(wan_path, data=payload)
-                time.sleep(delay)
-                return True
-            except Exception:
-                continue
-        return False
-
-
 def detect_router_vendor(host: str, port: int) -> str:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
-
-    # Common Algérie Télécom Nokia default gateway
-    if host == "192.168.1.254":
-        return "nokia"
 
     for proto in ["https", "http"]:
         # 1. Huawei Check (RandCount hex token)
@@ -1278,35 +996,11 @@ def detect_router_vendor(host: str, port: int) -> str:
         except Exception:
             pass
 
-        # 3. Nokia / Alcatel-Lucent Check
-        try:
-            req = urllib.request.Request(f"{proto}://{host}:{port}/login.cgi")
-            with opener.open(req, timeout=1.8) as r:
-                body = r.read().decode("utf-8", errors="ignore").lower()
-                if "nokia" in body or "alcatel" in body or "g-240w" in body or "g-140w" in body or "useradmin" in body:
-                    return "nokia"
-        except Exception:
-            pass
-
-        # 4. ZTE ZXHN Check
-        try:
-            req = urllib.request.Request(f"{proto}://{host}:{port}/getpage.gch?pid=1002")
-            with opener.open(req, timeout=1.8) as r:
-                body = r.read().decode("utf-8", errors="ignore").lower()
-                if "zte" in body or "zxhn" in body or "frm_logintoken" in body:
-                    return "zte"
-        except Exception:
-            pass
-
-        # 5. General root banner check
+        # 3. General root banner check
         try:
             req = urllib.request.Request(f"{proto}://{host}:{port}/")
             with opener.open(req, timeout=1.8) as r:
                 body = r.read().decode("utf-8", errors="ignore").lower()
-                if "nokia" in body or "alcatel" in body:
-                    return "nokia"
-                if "zte" in body or "zxhn" in body:
-                    return "zte"
                 if "fiberhome" in body:
                     return "fiberhome"
                 if "huawei" in body:
@@ -1320,10 +1014,6 @@ def create_driver(vendor: str, host: str, port: int, user: str, password: str) -
     v = (vendor or "").lower().strip()
     if v == "fiberhome":
         return FiberHomeDriver(host=host, port=port, username=user, password=password)
-    elif v == "zte":
-        return ZTEDriver(host=host, port=port, username=user, password=password)
-    elif v == "nokia":
-        return NokiaDriver(host=host, port=port, username=user, password=password)
     elif v == "upnp":
         return UPnPDriver(host=host, port=port, username=user, password=password)
     else:
@@ -1731,40 +1421,16 @@ def run_setup_wizard() -> dict:
     print(f"[?] Auto-detected router brand: \033[1;32m{detected_vendor.upper()}\033[0m")
     print("  [1] Huawei EchoLife / OptiXstar (HG8145X6, HG8145V5, HG8245)")
     print("  [2] FiberHome (HG6145, HG6143, AN5506)")
-    print("  [3] ZTE ZXHN & Wi-Fi 6 (F660, F6640, F6600, F670, F680)")
-    print("  [4] Nokia / Alcatel-Lucent (G-240W-F, G-140W, XS-2426G-A)")
-    print("  [5] Universal UPnP (OpenWrt, ASUS, TP-Link)")
-    vendor_ch = input("Select brand [1-5, default: auto-detected]: ").strip()
+    print("  [3] Universal UPnP (OpenWrt, ASUS, TP-Link)")
+    vendor_ch = input("Select brand [1-3, default: auto-detected]: ").strip()
 
     if vendor_ch == "1": vendor = "huawei"
     elif vendor_ch == "2": vendor = "fiberhome"
-    elif vendor_ch == "3": vendor = "zte"
-    elif vendor_ch == "4": vendor = "nokia"
-    elif vendor_ch == "5": vendor = "upnp"
+    elif vendor_ch == "3": vendor = "upnp"
     else: vendor = detected_vendor
 
     print("\nCommon Username Presets:")
-    if vendor == "nokia":
-        print("  [1] userAdmin (Default Algérie Télécom Nokia Superuser)")
-        print("  [2] admin")
-        print("  [3] AdminGPON")
-        print("  [4] Custom username")
-        preset = input("Select username preset [1-4, default: 1]: ").strip()
-        if preset == "2": username = "admin"
-        elif preset == "3": username = "AdminGPON"
-        elif preset == "4": username = input("Enter custom username: ").strip()
-        else: username = "userAdmin"
-    elif vendor == "zte":
-        print("  [1] admin (Default ZTE admin)")
-        print("  [2] user (Standard user account)")
-        print("  [3] telecomadmin (Algérie Télécom Superuser)")
-        print("  [4] Custom username")
-        preset = input("Select username preset [1-4, default: 1]: ").strip()
-        if preset == "2": username = "user"
-        elif preset == "3": username = "telecomadmin"
-        elif preset == "4": username = input("Enter custom username: ").strip()
-        else: username = "admin"
-    elif vendor == "fiberhome":
+    if vendor == "fiberhome":
         print("  [1] user (Default Algérie Télécom FiberHome user)")
         print("  [2] admin")
         print("  [3] telecomadmin")
@@ -2088,7 +1754,7 @@ def main():
     parser.add_argument("--lang", choices=["en", "fr"], default=None, help="Set language: 'en' for English, 'fr' for Français")
     parser.add_argument("--serve", type=int, default=0, metavar="PORT", help="Run as lightweight REST API daemon on port (e.g. 8080)")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON (ideal for scripts & bots)")
-    parser.add_argument("--vendor", choices=["huawei", "fiberhome", "zte", "nokia", "upnp"], default=None, help="Force router driver vendor")
+    parser.add_argument("--vendor", choices=["huawei", "fiberhome", "upnp"], default=None, help="Force router driver vendor")
     parser.add_argument("--host", default=None, help="Router IP / Gateway (default: auto-detected)")
     parser.add_argument("--port", type=int, default=None, help="Router Port (default: 80)")
     parser.add_argument("--user", default=None, help="Router username")
