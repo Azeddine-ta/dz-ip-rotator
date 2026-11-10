@@ -161,15 +161,15 @@ curl http://127.0.0.1:8080/status
 # Trigger instant rotation
 curl http://127.0.0.1:8080/rotate
 
-# Rotate with target pool and public IP guarantee
-curl "http://127.0.0.1:8080/rotate?pool=105&public_only=1"
+# Rotate with target pool and max ping threshold
+curl "http://127.0.0.1:8080/rotate?pool=105&max_ping=25"
 ```
 
 ---
 
 ## 🔒 Security & Privacy
 
-* Credentials entered during the setup wizard are saved locally at `~/.dz_router_optimizer.json` with strict user-only permissions (`0600`).
+* Credentials entered during the setup wizard are saved locally at `~/.config/dz-ip-changer/config.json` with strict user-only permissions (`0600`).
 * No telemetry, no third-party tracking, and no external servers contacted except standard public DNS ping probes (Cloudflare `1.1.1.1` and Google `8.8.8.8`).
 
 ---

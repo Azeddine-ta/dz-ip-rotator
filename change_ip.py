@@ -855,37 +855,49 @@ class FiberHomeDriver(BaseRouterDriver):
                 pass
 
     def get_full_wan_status(self) -> dict:
+        if not self.session_id:
+            self.login()
+
         base = self._request(f"/cgi-bin/ajax?ajaxmethod=get_base_info&sessionid={self.session_id}")
-        model = "FiberHome ONT"
-        uptime = "0"
-        if isinstance(base, dict) and "error" not in base:
-            model = base.get("ModelName", "FiberHome ONT")
-            uptime = base.get("UpTime", "0")
+        if isinstance(base, dict) and base.get("session_valid") == 0:
+            self.login()
+            base = self._request(f"/cgi-bin/ajax?ajaxmethod=get_base_info&sessionid={self.session_id}")
+
+        model = base.get("ModelName", "HG6145") if isinstance(base, dict) and "error" not in base else "FiberHome ONT"
+        uptime = str(base.get("uptime") or base.get("UpTime") or "0") if isinstance(base, dict) else "0"
 
         ip = "0.0.0.0"
         gw = "0.0.0.0"
         dns = ""
-        wan_name = model
-        status = "Connected"
+        wan_name = f"FiberHome {model}"
+        status = "Disconnected"
 
-        # Query get_wan_conn_info (safely ignore if unprivileged account returns 403)
-        wan_resp = self._request(f"/cgi-bin/ajax?ajaxmethod=get_wan_conn_info&sessionid={self.session_id}")
-        wan_list = []
-        if isinstance(wan_resp, dict) and "error" not in wan_resp:
-            wan_list = wan_resp.get("wan_conn_info") or wan_resp.get("wan_info") or []
+        wan_resp = self._request(f"/cgi-bin/ajax?ajaxmethod=get_allwan_info_broadBand&sessionid={self.session_id}")
+        if isinstance(wan_resp, dict) and (wan_resp.get("session_valid") == 0 or "error" in wan_resp):
+            self.login()
+            wan_resp = self._request(f"/cgi-bin/ajax?ajaxmethod=get_allwan_info_broadBand&sessionid={self.session_id}")
 
-        if isinstance(wan_list, list) and wan_list:
-            selected = None
-            for w in wan_list:
-                svc = str(w.get("ServiceType", "")).upper() + str(w.get("Name", "")).upper()
-                if "INTERNET" in svc or selected is None:
-                    selected = w
-            if selected:
-                ip = selected.get("IPAddress") or selected.get("ExternalIPAddress") or "0.0.0.0"
-                gw = selected.get("GatewayIPAddress") or selected.get("DefaultGateway") or "0.0.0.0"
-                dns = selected.get("DNSServers") or selected.get("DNS") or ""
-                wan_name = selected.get("Name") or model
-                status = selected.get("ConnectionStatus") or selected.get("Status") or "Connected"
+        wan_list = wan_resp.get("wan", []) if isinstance(wan_resp, dict) else []
+        selected = None
+        for w in wan_list:
+            svc = str(w.get("ServiceList", "")).upper()
+            iporppp = w.get("iporppp")
+            if iporppp == 2 or ("INTERNET" in svc and "VOIP" not in svc):
+                selected = w
+                break
+        if not selected and wan_list:
+            selected = wan_list[0]
+
+        if selected:
+            raw_ip = selected.get("ExternalIPAddress") or selected.get("IPAddress") or "0.0.0.0"
+            ip = str(raw_ip).replace("_point_", ".").strip()
+            raw_gw = selected.get("DefaultGateway") or selected.get("RemoteIPAddress") or "0.0.0.0"
+            gw = str(raw_gw).replace("_point_", ".").strip()
+            raw_dns = selected.get("DNSServers") or selected.get("DNS") or ""
+            dns = str(raw_dns).replace("_point_", ".").strip()
+            wan_name = selected.get("Name") or f"FiberHome {model}"
+            status = selected.get("ConnectionStatus") or selected.get("Status") or "Connected"
+            uptime = str(selected.get("Uptime") or uptime)
 
         # Fallback to external IP probe if local interface returned 0.0.0.0 or 403
         if ip in ("0.0.0.0", "", None):
@@ -907,12 +919,16 @@ class FiberHomeDriver(BaseRouterDriver):
         }
 
     def reconnect_pppoe(self, delay: float = 1.0) -> bool:
+        if not self.session_id:
+            self.login()
         payload = {
-            "ajaxmethod": "set_wan_connect",
-            "action": "reconnect",
+            "ajaxmethod": "set_onu_reboot",
             "sessionid": self.session_id
         }
-        self._request("/cgi-bin/ajax", data=payload)
+        try:
+            self._request("/cgi-bin/ajax", data=payload)
+        except Exception:
+            pass
         return True
 
 
@@ -1067,6 +1083,9 @@ def perform_smart_rotation(
     total_start = time.time()
     frame_idx = 0
     
+    is_fh = isinstance(client, FiberHomeDriver)
+    effective_timeout = max(timeout, 70) if is_fh else timeout
+
     while attempt <= max_attempts:
         cycle_start = time.time()
         ok = client.reconnect_pppoe()
@@ -1077,8 +1096,8 @@ def perform_smart_rotation(
         new_status = None
         elapsed = 0
         
-        while elapsed < timeout:
-            time.sleep(0.6)
+        while elapsed < effective_timeout:
+            time.sleep(1.0 if is_fh else 0.5)
             frame_idx += 1
             elapsed = time.time() - cycle_start
             
@@ -1087,6 +1106,11 @@ def perform_smart_rotation(
                 curr_status = st["status"]
                 curr_ip = st["ip"]
                 
+                if is_fh and elapsed < 15 and curr_ip == old_ip:
+                    if not quiet:
+                        render_spinner(frame_idx, elapsed, "Rebooting ONT...")
+                    continue
+
                 if not quiet:
                     if curr_status == "Disconnected":
                         render_spinner(frame_idx, elapsed, tr("resetting_session"))
@@ -1117,7 +1141,7 @@ def perform_smart_rotation(
                 circuit_breaker.trip_warning()
                 return old_ip, None
             if not quiet:
-                print(f"\033[1;31m[!] Timeout ({timeout}s).\033[0m")
+                print(f"\033[1;31m[!] Timeout ({effective_timeout}s).\033[0m")
             return old_ip, None
 
         circuit_breaker.record_success()
