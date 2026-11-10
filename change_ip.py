@@ -636,28 +636,51 @@ class HuaweiDriver(BaseRouterDriver):
             "uptime_seconds": uptime
         }
 
+    def reboot_ont(self) -> bool:
+        """Safe reboot fallback for standard users (admin/user) without superadmin WAN permissions."""
+        onttoken = self.get_ont_token()
+        reboot_data = {"x.X_HW_Token": onttoken}
+        try:
+            self._request(
+                "/set.cgi?x=InternetGatewayDevice.X_HW_DEBUG.SSP.DBSave&y=InternetGatewayDevice.X_HW_DEBUG.SMP.DM.ResetBoard&RequestFile=html/ssmp/cfgfile/cfgfile.asp",
+                data=reboot_data
+            )
+            return True
+        except Exception:
+            return False
+
     def reconnect_pppoe(self, delay: float = 1.0) -> bool:
-        if not self.wan_domain:
-            self.get_full_wan_status()
+        # Standard users (admin/root) on Huawei lack superadmin rights to toggle WAN via bbsp/wan/wan.asp
+        is_super = "telecomadmin" in (self.username or "").lower()
 
-        onttoken = self.get_ont_token()
-        disable_params = {
-            "GROUP_a_y.Enable": "0",
-            "GROUP_a_y.ConnectionTrigger": "AlwaysOn",
-            "x.X_HW_Token": onttoken
-        }
-        self._request(f"/set.cgi?GROUP_a_y={self.wan_domain}&RequestFile=html/bbsp/wan/wan.asp", data=disable_params)
-        
-        time.sleep(delay)
+        if is_super:
+            try:
+                if not self.wan_domain:
+                    self.get_full_wan_status()
 
-        onttoken = self.get_ont_token()
-        enable_params = {
-            "GROUP_a_y.Enable": "1",
-            "GROUP_a_y.ConnectionTrigger": "AlwaysOn",
-            "x.X_HW_Token": onttoken
-        }
-        self._request(f"/set.cgi?GROUP_a_y={self.wan_domain}&RequestFile=html/bbsp/wan/wan.asp", data=enable_params)
-        return True
+                onttoken = self.get_ont_token()
+                disable_params = {
+                    "GROUP_a_y.Enable": "0",
+                    "GROUP_a_y.ConnectionTrigger": "AlwaysOn",
+                    "x.X_HW_Token": onttoken
+                }
+                self._request(f"/set.cgi?GROUP_a_y={self.wan_domain}&RequestFile=html/bbsp/wan/wan.asp", data=disable_params)
+                
+                time.sleep(delay)
+
+                onttoken = self.get_ont_token()
+                enable_params = {
+                    "GROUP_a_y.Enable": "1",
+                    "GROUP_a_y.ConnectionTrigger": "AlwaysOn",
+                    "x.X_HW_Token": onttoken
+                }
+                self._request(f"/set.cgi?GROUP_a_y={self.wan_domain}&RequestFile=html/bbsp/wan/wan.asp", data=enable_params)
+                return True
+            except Exception:
+                # If fast toggle was rejected or timed out, fall back to safe ONT reboot
+                pass
+
+        return self.reboot_ont()
 
 
 # --- Pure Python AES-128-CBC Engine (Zero External Dependencies) ---
@@ -743,6 +766,43 @@ def fh_aes_encrypt(plaintext: str) -> str:
     return bytes(out).hex().upper()
 
 
+def fh_mac_to_pass(mac: str) -> str:
+    """Calculates Algérie Télécom FiberHome HG6145F1 admin key from Base MAC address."""
+    import hashlib
+    UPPER = "ACDFGHJMNPRSTUWXY"
+    LOWER = "abcdfghjkmpstuwxy"
+    DIGIT = "2345679"
+    SYMBOL = "!@$&%"
+
+    mac_clean = mac.strip().upper()
+    digest = hashlib.md5((mac_clean + "AEJLY").encode("utf-8")).hexdigest()
+    vals = [int(c, 16) for c in digest[:20]]
+
+    password = [""] * 16
+    for i in range(16):
+        v = vals[i]
+        t = v % 4
+        if t == 0: password[i] = UPPER[(v * 2) % 17]
+        elif t == 1: password[i] = LOWER[(v * 2 + 1) % 17]
+        elif t == 2: password[i] = DIGIT[6 - (v % 7)]
+        else: password[i] = SYMBOL[4 - (v % 5)]
+
+    p0 = (vals[16] + 1) % 16
+    p1 = (vals[17] + 1) % 16
+    while p1 == p0: p1 = (p1 + 1) % 16
+    p2 = (vals[18] + 1) % 16
+    while p2 == p0 or p2 == p1: p2 = (p2 + 1) % 16
+    p3 = (vals[19] + 1) % 16
+    while p3 == p0 or p3 == p1 or p3 == p2: p3 = (p3 + 1) % 16
+
+    password[p0] = UPPER[(vals[16] * 2) % 17]
+    password[p1] = LOWER[(vals[17] * 2 + 1) % 17]
+    password[p2] = DIGIT[6 - (vals[18] % 7)]
+    password[p3] = SYMBOL[4 - (vals[19] % 5)]
+
+    return "".join(password)
+
+
 class FiberHomeDriver(BaseRouterDriver):
     def __init__(self, host, port, username, password, protocol=None):
         super().__init__(host, port, username, password, protocol)
@@ -759,12 +819,29 @@ class FiberHomeDriver(BaseRouterDriver):
             urllib.request.HTTPSHandler(context=ctx)
         )
 
+    def _refresh_session(self) -> str:
+        try:
+            res = self._request("/cgi-bin/ajax?ajaxmethod=get_refresh_sessionid")
+            if isinstance(res, dict) and res.get("sessionid"):
+                self.session_id = res["sessionid"]
+                return self.session_id
+        except Exception:
+            pass
+        return self.session_id
+
     def _request(self, endpoint: str, data: dict = None) -> dict:
         if not self.base_url:
             self.determine_protocol()
 
         url = f"{self.base_url}{endpoint}"
-        encoded_data = urllib.parse.urlencode(data).encode("utf-8") if data else None
+        if data is not None and isinstance(data, dict):
+            if "sessionid" in data and self.session_id:
+                data["sessionid"] = self.session_id
+            encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+        elif data is not None:
+            encoded_data = data.encode("utf-8") if isinstance(data, str) else data
+        else:
+            encoded_data = None
         
         # Clean headers matching browser requests exactly
         host_header = self.host if self.port in (80, 443) else f"{self.host}:{self.port}"
@@ -779,14 +856,30 @@ class FiberHomeDriver(BaseRouterDriver):
         
         req = urllib.request.Request(url, data=encoded_data, headers=headers)
         try:
-            with self.opener.open(req, timeout=7) as resp:
+            with self.opener.open(req, timeout=8) as resp:
                 text = resp.read().decode("utf-8", errors="ignore")
                 try:
                     return json.loads(text)
                 except Exception:
                     return {"raw": text}
         except urllib.error.HTTPError as he:
-            # Gracefully handle 403/401/500 errors from BOA web server
+            # If 403 Forbidden on a POST request, refresh session token and retry once
+            if he.code == 403 and data is not None and isinstance(data, dict) and "sessionid" in data:
+                try:
+                    ref_res = self._request("/cgi-bin/ajax?ajaxmethod=get_refresh_sessionid")
+                    if isinstance(ref_res, dict) and ref_res.get("sessionid"):
+                        self.session_id = ref_res["sessionid"]
+                        data["sessionid"] = self.session_id
+                        retry_encoded = urllib.parse.urlencode(data).encode("utf-8")
+                        req_retry = urllib.request.Request(url, data=retry_encoded, headers=headers)
+                        with self.opener.open(req_retry, timeout=8) as resp_retry:
+                            text = resp_retry.read().decode("utf-8", errors="ignore")
+                            try:
+                                return json.loads(text)
+                            except Exception:
+                                return {"raw": text}
+                except Exception:
+                    pass
             return {"error": he.code, "msg": str(he)}
         except Exception as ex:
             return {"error": -1, "msg": str(ex)}
@@ -817,9 +910,10 @@ class FiberHomeDriver(BaseRouterDriver):
         if isinstance(resp, dict):
             res_code = resp.get("login_result")
             if res_code == 0:
+                self._refresh_session()
                 return True
             elif res_code in (1, 4):
-                raise RuntimeError("FiberHome Authentication failed: Incorrect username or password (check credentials on router sticker, or try 'user' / 'user').")
+                raise RuntimeError("FiberHome Authentication failed: Incorrect username or password (check credentials on router sticker, or use your admin password).")
             elif res_code == 2:
                 # Session collision: reset stale session and retry
                 self._request("/cgi-bin/ajax", data={
@@ -834,6 +928,7 @@ class FiberHomeDriver(BaseRouterDriver):
                     login_payload["sessionid"] = self.session_id
                     resp2 = self._request("/cgi-bin/ajax", data=login_payload)
                     if isinstance(resp2, dict) and resp2.get("login_result") == 0:
+                        self._refresh_session()
                         return True
                 raise RuntimeError("FiberHome: User already logged in elsewhere. Please logout from browser.")
             elif "error" in resp:
@@ -899,12 +994,9 @@ class FiberHomeDriver(BaseRouterDriver):
             status = selected.get("ConnectionStatus") or selected.get("Status") or "Connected"
             uptime = str(selected.get("Uptime") or uptime)
 
-        # Fallback to external IP probe if local interface returned 0.0.0.0 or 403
         if ip in ("0.0.0.0", "", None):
-            _, _, ext_ip = check_cgnat("1.1.1.1")
-            if ext_ip and ext_ip not in ("0.0.0.0", "Unknown"):
-                ip = ext_ip
-                status = "Connected"
+            ip = "0.0.0.0"
+            status = "Disconnected"
 
         return {
             "driver": "FiberHome",
@@ -921,14 +1013,23 @@ class FiberHomeDriver(BaseRouterDriver):
     def reconnect_pppoe(self, delay: float = 1.0) -> bool:
         if not self.session_id:
             self.login()
+
+        # Step 1: Ensure anti-CSRF token is freshly synchronized with BOA server
+        self._refresh_session()
+
         payload = {
             "ajaxmethod": "set_onu_reboot",
             "sessionid": self.session_id
         }
-        try:
-            self._request("/cgi-bin/ajax", data=payload)
-        except Exception:
-            pass
+        res = self._request("/cgi-bin/ajax", data=payload)
+        if isinstance(res, dict) and res.get("error") in (401, 403):
+            try:
+                self.login()
+                self._refresh_session()
+                payload["sessionid"] = self.session_id
+                self._request("/cgi-bin/ajax", data=payload)
+            except Exception:
+                pass
         return True
 
 
@@ -1084,7 +1185,9 @@ def perform_smart_rotation(
     frame_idx = 0
     
     is_fh = isinstance(client, FiberHomeDriver)
-    effective_timeout = max(timeout, 70) if is_fh else timeout
+    is_hw_reboot = isinstance(client, HuaweiDriver) and "telecomadmin" not in (client.username or "").lower()
+    needs_reboot_cycle = is_fh or is_hw_reboot
+    effective_timeout = max(timeout, 95) if needs_reboot_cycle else timeout
 
     while attempt <= max_attempts:
         cycle_start = time.time()
@@ -1097,7 +1200,7 @@ def perform_smart_rotation(
         elapsed = 0
         
         while elapsed < effective_timeout:
-            time.sleep(1.0 if is_fh else 0.5)
+            time.sleep(1.0 if needs_reboot_cycle else 0.5)
             frame_idx += 1
             elapsed = time.time() - cycle_start
             
@@ -1106,17 +1209,29 @@ def perform_smart_rotation(
                 curr_status = st["status"]
                 curr_ip = st["ip"]
                 
-                if is_fh and elapsed < 15 and curr_ip == old_ip:
-                    if not quiet:
-                        render_spinner(frame_idx, elapsed, "Rebooting ONT...")
-                    continue
+                if needs_reboot_cycle:
+                    # In first 18s, the ONT is still shutting down or initiating reboot
+                    if elapsed < 18 and curr_ip == old_ip:
+                        if not quiet:
+                            render_spinner(frame_idx, elapsed, tr("resetting_session") + " (Rebooting ONT)...")
+                        continue
+                    # While rebooting/negotiating lease
+                    if curr_status != "Connected" or curr_ip in ("0.0.0.0", "", "Unknown", None):
+                        if not quiet:
+                            render_spinner(frame_idx, elapsed, tr("negotiating_lease"))
+                        continue
+                    # If status is Connected but IP hasn't rotated yet and we're early in boot
+                    if curr_ip == old_ip and elapsed < 40:
+                        if not quiet:
+                            render_spinner(frame_idx, elapsed, tr("negotiating_lease"))
+                        continue
 
                 if not quiet:
                     if curr_status == "Disconnected":
                         render_spinner(frame_idx, elapsed, tr("resetting_session"))
                     elif curr_status == "Connecting":
                         render_spinner(frame_idx, elapsed, tr("negotiating_lease"))
-                    elif curr_status == "Connected" and curr_ip not in ("0.0.0.0", ""):
+                    elif curr_status == "Connected" and curr_ip not in ("0.0.0.0", "", "Unknown", None):
                         render_spinner(frame_idx, elapsed, tr("validating_ip", ip=curr_ip))
                         new_ip = curr_ip
                         new_status = st
@@ -1124,13 +1239,14 @@ def perform_smart_rotation(
                     else:
                         render_spinner(frame_idx, elapsed, f"State: {curr_status}...")
                 else:
-                    if curr_status == "Connected" and curr_ip not in ("0.0.0.0", ""):
+                    if curr_status == "Connected" and curr_ip not in ("0.0.0.0", "", "Unknown", None):
                         new_ip = curr_ip
                         new_status = st
                         break
             except Exception:
                 if not quiet:
-                    render_spinner(frame_idx, elapsed, tr("handshaking"))
+                    msg = "Rebooting ONT & reconnecting..." if (needs_reboot_cycle and elapsed < 55) else tr("handshaking")
+                    render_spinner(frame_idx, elapsed, msg)
 
         if not quiet:
             sys.stdout.write("\r" + " "*60 + "\r")
@@ -1392,36 +1508,45 @@ def run_setup_wizard() -> dict:
 
     print("\nCommon Username Presets:")
     if vendor == "fiberhome":
-        print("  [1] user (Default Algérie Télécom FiberHome user)")
-        print("  [2] admin")
-        print("  [3] telecomadmin")
-        print("  [4] Custom username")
-        preset = input("Select username preset [1-4, default: 1]: ").strip()
-        if preset == "2": username = "admin"
-        elif preset == "3": username = "telecomadmin"
-        elif preset == "4": username = input("Enter custom username: ").strip()
-        else: username = "user"
+        print("  [1] admin (FiberHome Superadmin)")
+        print("  [2] user (FiberHome Standard User - router sticker password)")
+        print("  [3] Custom username")
+        preset = input("Select username preset [1-3, default: 1]: ").strip()
+        if preset == "2":
+            username = "user"
+            default_pass = ""
+        elif preset == "3":
+            username = input("Enter custom username: ").strip()
+            default_pass = ""
+        else:
+            username = "admin"
+            default_pass = ""
     else:
-        print("  [1] telecomadmin (Default Algérie Télécom Superuser)")
-        print("  [2] admin")
-        print("  [3] root")
-        print("  [4] Custom username")
-        preset = input("Select username preset [1-4, default: 1]: ").strip()
-        if preset == "2": username = "admin"
-        elif preset == "3": username = "root"
-        elif preset == "4": username = input("Enter custom username: ").strip()
-        else: username = default_user if default_user else "telecomadmin"
+        print("  [1] telecomadmin (Huawei Superadmin - 2s fast toggle, default: admintelecom)")
+        print("  [2] admin (Huawei Standard User - safe reboot mode, router sticker)")
+        print("  [3] Custom username")
+        preset = input("Select username preset [1-3, default: 1]: ").strip()
+        if preset == "2":
+            username = "admin"
+            default_pass = "admin"
+        elif preset == "3":
+            username = input("Enter custom username: ").strip()
+            default_pass = ""
+        else:
+            username = "telecomadmin"
+            default_pass = "admintelecom"
 
-    default_pass = current_cfg.get("password", "")
+    saved_pass = current_cfg.get("password", "")
+    suggested_pass = saved_pass if saved_pass else default_pass
     pass_prompt = f"Enter router password for '{username}'"
-    if default_pass:
-        pass_prompt += f" [press Enter to keep saved]: "
+    if suggested_pass:
+        pass_prompt += f" [press Enter for '{suggested_pass}']: "
     else:
         pass_prompt += ": "
 
     password = input(pass_prompt).strip()
-    if not password and default_pass:
-        password = default_pass
+    if not password and suggested_pass:
+        password = suggested_pass
     while not password:
         print("Password cannot be empty.")
         password = input(f"Enter router password for '{username}': ").strip()
@@ -1470,30 +1595,59 @@ def resolve_credentials(args) -> dict:
         save_config(saved)
 
     if args.host or args.user or args.password:
+        target_host = args.host or detect_default_gateway()
+        target_port = args.port or 80
+        target_vendor = args.vendor
+        if not target_vendor:
+            detected = detect_router_vendor(target_host, target_port)
+            if detected:
+                target_vendor = detected
+            elif "vendor" in saved:
+                target_vendor = saved["vendor"]
+            else:
+                target_vendor = "huawei"
+
+        default_user = args.user
+        default_pass = args.password or ""
+        if not default_pass and saved.get("password") and (target_host == saved.get("host") or not args.host):
+            default_pass = saved.get("password")
+            if not default_user and saved.get("username"):
+                default_user = saved.get("username")
+
+        if not default_user:
+            default_user = "admin" if target_vendor == "fiberhome" else "telecomadmin"
+
         return {
-            "vendor": args.vendor or "huawei",
-            "host": args.host or detect_default_gateway(),
-            "port": args.port or 80,
-            "username": args.user or "telecomadmin",
-            "password": args.password or "",
+            "vendor": target_vendor,
+            "host": target_host,
+            "port": target_port,
+            "username": default_user,
+            "password": default_pass,
             "lang": CURRENT_LANG
         }
 
     env_user = os.environ.get("ROUTER_USER") or os.environ.get("HUAWEI_ROUTER_USER")
     env_pass = os.environ.get("ROUTER_PASS") or os.environ.get("HUAWEI_ROUTER_PASS")
     if env_user and env_pass:
+        env_host = os.environ.get("ROUTER_HOST", detect_default_gateway())
+        env_port = int(os.environ.get("ROUTER_PORT", 80))
+        env_vendor = os.environ.get("ROUTER_VENDOR")
+        if not env_vendor:
+            env_vendor = detect_router_vendor(env_host, env_port) or "huawei"
         return {
-            "vendor": os.environ.get("ROUTER_VENDOR", "huawei"),
-            "host": os.environ.get("ROUTER_HOST", detect_default_gateway()),
-            "port": int(os.environ.get("ROUTER_PORT", 80)),
+            "vendor": env_vendor,
+            "host": env_host,
+            "port": env_port,
             "username": env_user,
             "password": env_pass,
             "lang": CURRENT_LANG
         }
 
     if saved.get("username") and saved.get("password"):
+        target_host = saved.get("host", detect_default_gateway())
+        target_port = saved.get("port", 80)
         if "vendor" not in saved:
-            saved["vendor"] = detect_router_vendor(saved.get("host", "192.168.100.1"), saved.get("port", 80))
+            saved["vendor"] = detect_router_vendor(target_host, target_port) or "huawei"
         saved["lang"] = CURRENT_LANG
         return saved
 

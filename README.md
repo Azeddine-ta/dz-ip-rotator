@@ -13,6 +13,21 @@ A lightweight, zero-dependency Python tool to rotate WAN IP addresses, hunt opti
 
 ---
 
+> [!CAUTION]
+> # ⚠️ CRITICAL REQUIREMENT: ROUTER ADMIN ACCESS ONLY ⚠️
+> **This tool REQUIRES Administrator / Superadmin credentials to control, toggle, or reboot WAN connections.**
+>
+> Normal or restricted "guest" accounts **cannot** modify or bounce WAN interfaces:
+> * **Huawei (EchoLife / OptiXstar):**
+>   * **`telecomadmin`** *(Superadmin, default: `admintelecom`)*: Enables the **instant ~2-second PPPoE toggle** with zero downtime for local LAN devices.
+>   * **`admin`** *(Standard User, sticker credentials)*: Automatically executes an **ONT reboot cycle (~60–75s)** as standard users lack direct WAN edit rights.
+> * **FiberHome (HG6145 / HG6143 / AN5506):**
+>   * **`admin`** *(FiberHome Superadmin)*: Required for full management.
+>   * **`user`** *(Sticker credentials)*: Works via automated ONT reboot (`set_onu_reboot`).
+>   * ❌ *Standard restricted guest accounts without reboot/WAN permissions cannot rotate IP addresses.*
+
+---
+
 ```text
   ___  ____    ___ ____   ___  ___ _____ ___  ____  
  |   \/__  /  |_ _|  _ \ | _ \/ _ \_   _/ _ \| _ \ 
